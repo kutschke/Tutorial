@@ -1,0 +1,20 @@
+#
+# Print the tracker geometry.
+#
+
+#include "Offline/fcl/standardServices.fcl"
+
+services : @local::Services.Core
+
+physics :{
+  analyzers: {
+
+    printGeometry : {
+      module_type : NominalTrackerGeom
+    }
+  }
+  e1 : [printGeometry]
+
+  end_paths      : [e1]
+
+}
