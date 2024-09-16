@@ -105,10 +105,11 @@ namespace mu2e {
 
   void All01::analyze( const art::Event& event){
 
+    // Fetch data products.
     auto const& kalSeeds = event.getProduct(_kalSeedsToken);
-    _hNTracks->Fill( kalSeeds.size() );
+    auto const& crvCCs   = event.getProduct(_crvCCToken);
 
-    auto const& crvCCs = event.getProduct(_crvCCToken);
+    _hNTracks->Fill( kalSeeds.size() );
     _hnCrvCC->Fill( crvCCs.size() );
 
     // Ntuple buffer;
@@ -123,20 +124,32 @@ namespace mu2e {
         continue;
       }
 
-      // Only consider tracks that have all 3 sets of intersection information.
-      // The three locations are at the intersections of the trajectory with planes
-      // perpendicular to the z axis and at the front, middle and back of the tracker.
-      // Just because.  It's not a recommendation for analysis.
-      std::vector<KalIntersection>::const_iterator front = ks.intersection( SurfaceIdEnum::TT_Front );
-      auto mid  = ks.intersection( SurfaceIdEnum::TT_Mid );
-      auto back = ks.intersection( SurfaceIdEnum::TT_Back );
-      if ( front == ks.intersections().end() || mid == ks.intersections().end() || back == ks.intersections().end() ){
+      // Learn where the track crossed 3 standard reference surfaces. These surfaces are
+      // planes perpendicular to the z axis and at the front, middle and back of the tracker.
+      // Tracks that reflect in the magnetic mirror may have multiple intersections.
+      // See KalSeed.hh to understand the return type.
+      // The return type is explicit on the first line for pedagogical purposes.
+      // We recommend using "auto" instead of hand coding complicated return types.
+
+      KalSeed::InterIterCol tt_front = ks.intersections( SurfaceIdEnum::TT_Front );
+      auto  tt_mid = ks.intersections( SurfaceIdEnum::TT_Mid );
+      auto tt_back = ks.intersections( SurfaceIdEnum::TT_Back );
+
+      // This is not a recommendation for analysis cut.
+      // It's done here to simplify the downstream code.
+      // Require exactly one intersection at each surface.
+      if ( tt_front.size() != 1 || tt_mid.size() != 1 || tt_back.size() != 1 ){
         _hnSkip->Fill(1.);
         continue;
       }
 
+      // For convenience
+      auto const& tt_front0 = tt_front.at(0);
+      auto const& tt_mid0   = tt_mid.at(0);
+      auto const& tt_back0  = tt_back.at(0);
+
       // Apply fiducial time cut;
-      if ( mid->time() < _tmin ){
+      if ( tt_mid0->time() < _tmin ){
         _hnSkip->Fill(2.);
         continue;
       }
@@ -144,7 +157,7 @@ namespace mu2e {
       // Time relative to Crv Coincidence clusters.
       if ( !crvCCs.empty() ){
         for ( auto const& cc : crvCCs ){
-          float dt = front->time() - cc.GetStartTime();
+          float dt = tt_front0->time() - cc.GetStartTime();
           _hdTCrv->Fill(dt);
         }
       }
@@ -152,28 +165,29 @@ namespace mu2e {
       // If the track has an associated cluster, plot E/p.
       if ( ks.hasCaloCluster() ){
         CaloCluster const& cluster= *ks.caloCluster();
-        float eOverP = cluster.energyDep()/back->mom();
+        float eOverP = cluster.energyDep()/tt_back0->mom();
         _heOverP->Fill( eOverP);
       }
 
-      // Global properties
+      // Global properties of the track (ie. not specific to an intersection ).
       _hnDOF->Fill( ks.nDOF() );
       _hHasCalo->Fill( ks.hasCaloCluster() );
 
       // Fill histograms at midpoint of the tracker.
-      _ht0->Fill(  mid->time()   );
-      _hp->Fill(   mid->mom()    );
-      _hpErr->Fill(mid->momerr());
+      _ht0->Fill(  tt_mid0->time()   );
+      _hp->Fill(   tt_mid0->mom()    );
+      _hpErr->Fill(tt_mid0->momerr() );
 
-      nt[0] = front->time();
-      nt[1] = front->mom();
-      nt[2] = front->momerr();
-      nt[3] = mid->time();
-      nt[4] = mid->mom();
-      nt[5] = mid->momerr();
-      nt[6] = back->time();
-      nt[7] = back->mom();
-      nt[8] = back->momerr();
+      // Fill ntuple with information about all 3 intersections.
+      nt[0] = tt_front0->time();
+      nt[1] = tt_front0->mom();
+      nt[2] = tt_front0->momerr();
+      nt[3] = tt_mid0->time();
+      nt[4] = tt_mid0->mom();
+      nt[5] = tt_mid0->momerr();
+      nt[6] = tt_back0->time();
+      nt[7] = tt_back0->mom();
+      nt[8] = tt_back0->momerr();
       _ntup->Fill( nt.data() );
 
       // See what intersections are present;
@@ -189,7 +203,7 @@ namespace mu2e {
                << endl;
         }
 
-      }
+      } // end test on maxPrint
 
     } // end loop over kalSeeds
 
